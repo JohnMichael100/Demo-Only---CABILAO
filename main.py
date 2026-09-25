@@ -6,6 +6,11 @@ from contextlib import asynccontextmanager
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from dotenv import load_dotenv
 
+# Import libraries for CSV
+import csv
+from io import StringIO
+from fastapi.responses import Response
+
 load_dotenv()
 
 DB_USER = os.getenv("DB_USER")
@@ -178,3 +183,39 @@ async def delete_user(user_id: int):
             raise HTTPException(status_code=404, detail="User not found")
 
         return None
+
+@app.get("/users/export/csv")
+async def export_users_csv():
+    """Export all users as a downloadable CSV file."""
+
+    async with app.state.pool.acquire() as conn:
+        # Same explicit-columns habit as everywhere else — password_hash
+        # never gets loaded in the first place.
+        rows = await conn.fetch(
+            "SELECT user_id, first_name, middle_name, last_name FROM users ORDER BY user_id"
+        )
+
+    # Build the CSV in memory. StringIO acts like a text file that lives
+    # in RAM instead of on disk — nothing is written to the filesystem.
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+
+    # Header row
+    writer.writerow(["user_id", "first_name", "middle_name", "last_name"])
+
+    # One row per user
+    for row in rows:
+        writer.writerow([
+            row["user_id"],
+            row["first_name"],
+            row["middle_name"] or "",   # avoid writing the literal word "None"
+            row["last_name"],
+        ])
+
+    buffer.seek(0)
+
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=users.csv"},
+    )
