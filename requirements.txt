@@ -3,4 +3,4 @@ uvicorn
 asyncpg
 bcrypt
 python-dotenv
-pydanticgi
+pydantic
